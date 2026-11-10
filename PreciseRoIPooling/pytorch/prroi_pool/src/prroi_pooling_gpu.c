@@ -6,6 +6,9 @@
  *
  * Distributed under terms of the MIT license.
  * Copyright (c) 2017 Megvii Technology Limited.
+ *
+ * Patched for PyTorch >= 1.11 (THC removed): THCudaCheck -> C10_CUDA_CHECK,
+ * Tensor::data<T>() -> data_ptr<T>(). No change to the computation.
  */
 
 #include <math.h>
@@ -14,7 +17,7 @@
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 
-#include <THC/THC.h>
+#include <c10/cuda/CUDAException.h>  // C10_CUDA_CHECK; THC was removed in PyTorch 1.11
 
 #include "prroi_pooling_gpu_impl.cuh"
 
@@ -28,18 +31,18 @@ at::Tensor prroi_pooling_forward_cuda(const at::Tensor &features, const at::Tens
     auto output = at::zeros({nr_rois, nr_channels, pooled_height, pooled_width}, features.options());
 
     if (output.numel() == 0) {
-        THCudaCheck(cudaGetLastError());
+        C10_CUDA_CHECK(cudaGetLastError());
         return output;
     }
 
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     PrRoIPoolingForwardGpu(
-        stream, features.data<float>(), rois.data<float>(), output.data<float>(),
+        stream, features.data_ptr<float>(), rois.data_ptr<float>(), output.data_ptr<float>(),
         nr_channels, height, width, pooled_height, pooled_width, spatial_scale,
         top_count
     );
 
-    THCudaCheck(cudaGetLastError());
+    C10_CUDA_CHECK(cudaGetLastError());
     return output;
 }
 
@@ -58,20 +61,20 @@ at::Tensor prroi_pooling_backward_cuda(
     int bottom_count = batch_size * nr_channels * height * width;
 
     if (output.numel() == 0) {
-        THCudaCheck(cudaGetLastError());
+        C10_CUDA_CHECK(cudaGetLastError());
         return features_diff;
     }
 
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     PrRoIPoolingBackwardGpu(
         stream,
-        features.data<float>(), rois.data<float>(), output.data<float>(), output_diff.data<float>(),
-        features_diff.data<float>(),
+        features.data_ptr<float>(), rois.data_ptr<float>(), output.data_ptr<float>(), output_diff.data_ptr<float>(),
+        features_diff.data_ptr<float>(),
         nr_channels, height, width, pooled_height, pooled_width, spatial_scale,
         top_count, bottom_count
     );
 
-    THCudaCheck(cudaGetLastError());
+    C10_CUDA_CHECK(cudaGetLastError());
     return features_diff;
 }
 
@@ -89,20 +92,20 @@ at::Tensor prroi_pooling_coor_backward_cuda(
     int bottom_count = nr_rois * 5;
 
     if (output.numel() == 0) {
-        THCudaCheck(cudaGetLastError());
+        C10_CUDA_CHECK(cudaGetLastError());
         return coor_diff;
     }
 
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     PrRoIPoolingCoorBackwardGpu(
         stream,
-        features.data<float>(), rois.data<float>(), output.data<float>(), output_diff.data<float>(),
-        coor_diff.data<float>(),
+        features.data_ptr<float>(), rois.data_ptr<float>(), output.data_ptr<float>(), output_diff.data_ptr<float>(),
+        coor_diff.data_ptr<float>(),
         nr_channels, height, width, pooled_height, pooled_width, spatial_scale,
         top_count, bottom_count
     );
 
-    THCudaCheck(cudaGetLastError());
+    C10_CUDA_CHECK(cudaGetLastError());
     return coor_diff;
 }
 
